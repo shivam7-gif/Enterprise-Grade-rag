@@ -29,8 +29,8 @@ class Repo(BaseModel):
     updated_at: Optional[datetime] = None
 
     model_config = {
-        "populate_by_name": True, 
-        "extra": "ignore",        
+        "populate_by_name": True,
+        "extra": "ignore",
     }
 
 
@@ -70,11 +70,50 @@ class GitHubConnector:
         logger.info(f"Saved {len(data)} repos to {output_path}")
         return output_path
 
+    def download_readme(self, repo: Repo):
+        # GitHub README API endpoint
+        repo_api = f"https://api.github.com/repos/{repo.full_name}/readme"
+
+        logger.info(f"Downloading README for {repo.full_name}")
+
+        resp = self.session.get(repo_api)
+
+        if resp.status_code == 404:
+            logger.warning(f"No README found for {repo.full_name}")
+            return
+
+        resp.raise_for_status()
+
+        # GitHub returns JSON with a download_url
+        readme_info = resp.json()
+
+        download_url = readme_info.get("download_url")
+
+        if not download_url:
+            logger.warning(f"No download URL found for {repo.full_name}")
+            return
+
+        readme_resp = self.session.get(download_url)
+        readme_resp.raise_for_status()
+
+        github_folder = os.path.join(self.output_dir, "github")
+        os.makedirs(github_folder, exist_ok=True)
+
+        readme_path = os.path.join(github_folder, f"{repo.name}.md")
+
+        with open(readme_path, "w", encoding="utf-8") as f:
+            f.write(readme_resp.text)
+
+        logger.info(f"Saved README -> {readme_path}")
+
     def run(self) -> list[Repo]:
         raw_repos = self.fetch_repositories()
         repos = self.parse_repos(raw_repos)
         self.save_json(repos)
-        print(len(repos))
+
+        for repo in repos:
+            self.download_readme(repo)
+
         return repos
 
 
